@@ -8,6 +8,17 @@ The Alertmanager handles alerts sent by client applications such as the Promethe
 
 * [Documentation](http://prometheus.io/docs/alerting/alertmanager/)
 
+## Plivo patch
+
+I've written a patch, where you can get notifications by getting a phone call, which is a more invasive notification than a message/email.
+
+Unfortunataly, it did not get merged into the alertmanager. So I thought other people might also be interested: Pull request: https://github.com/prometheus/alertmanager/pull/472 and the forked repo https://github.com/migadu/alertmanager
+
+Instructions:
+- Open a plivo account. You'll receive 5$ credit, which is plenty if you don't pick up the phone when it's ringing (the point is to get your phone ringing, not to make calls).
+- Add the number that should ring to the sandbox number: https://manage.plivo.com/sandbox-numbers/
+- Copy the Auth ID and Auth Token into the config
+
 
 ## Installation
 
@@ -62,7 +73,7 @@ route:
   # all alerts. It needs to have a receiver configured so alerts that do not
   # match any of the sub-routes are sent to someone.
   receiver: 'team-X-mails'
-  
+
   # The labels by which incoming alerts are grouped together. For example,
   # multiple alerts coming in for cluster=A and alertname=LatencyHigh would
   # be batched into a single group.
@@ -83,7 +94,7 @@ route:
   # resend them.
   repeat_interval: 3h
 
-  # All the above attributes are inherited by all child routes and can 
+  # All the above attributes are inherited by all child routes and can
   # overwritten on each.
 
   # The child route trees.
