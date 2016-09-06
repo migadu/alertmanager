@@ -15,23 +15,21 @@ package types
 
 import (
 	"fmt"
-	"hash/fnv"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/satori/go.uuid"
 )
 
 // Marker helps to mark alerts as silenced and/or inhibited.
 // All methods are goroutine-safe.
 type Marker interface {
 	SetInhibited(alert model.Fingerprint, b bool)
-	SetSilenced(alert model.Fingerprint, sil ...uuid.UUID)
+	SetSilenced(alert model.Fingerprint, sil ...string)
 
-	Silenced(alert model.Fingerprint) (uuid.UUID, bool)
+	Silenced(alert model.Fingerprint) (string, bool)
 	Inhibited(alert model.Fingerprint) bool
 }
 
@@ -39,13 +37,13 @@ type Marker interface {
 func NewMarker() Marker {
 	return &memMarker{
 		inhibited: map[model.Fingerprint]struct{}{},
-		silenced:  map[model.Fingerprint]uuid.UUID{},
+		silenced:  map[model.Fingerprint]string{},
 	}
 }
 
 type memMarker struct {
 	inhibited map[model.Fingerprint]struct{}
-	silenced  map[model.Fingerprint]uuid.UUID
+	silenced  map[model.Fingerprint]string
 
 	mtx sync.RWMutex
 }
@@ -58,7 +56,7 @@ func (m *memMarker) Inhibited(alert model.Fingerprint) bool {
 	return ok
 }
 
-func (m *memMarker) Silenced(alert model.Fingerprint) (uuid.UUID, bool) {
+func (m *memMarker) Silenced(alert model.Fingerprint) (string, bool) {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()
 
@@ -77,7 +75,7 @@ func (m *memMarker) SetInhibited(alert model.Fingerprint, b bool) {
 	}
 }
 
-func (m *memMarker) SetSilenced(alert model.Fingerprint, sil ...uuid.UUID) {
+func (m *memMarker) SetSilenced(alert model.Fingerprint, sil ...string) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -207,7 +205,7 @@ func (f MuteFunc) Mutes(lset model.LabelSet) bool { return f(lset) }
 // A Silence determines whether a given label set is muted.
 type Silence struct {
 	// A unique identifier across all connected instances.
-	ID uuid.UUID `json:"id"`
+	ID string `json:"id"`
 	// A set of matchers determining if a label set is affect
 	// by the silence.
 	Matchers Matchers `json:"matchers"`
@@ -238,7 +236,7 @@ type Silence struct {
 
 // Validate returns true iff all fields of the silence have valid values.
 func (s *Silence) Validate() error {
-	if s.ID == uuid.Nil {
+	if s.ID == "" {
 		return fmt.Errorf("ID missing")
 	}
 	if len(s.Matchers) == 0 {
@@ -298,31 +296,8 @@ func (s *Silence) Mutes(lset model.LabelSet) bool {
 	return s.Matchers.Match(lset)
 }
 
-// Returns whether a silence is deleted. Semantically this means it had no effect
+// Deleted returns whether a silence is deleted. Semantically this means it had no effect
 // on history at any point.
 func (s *Silence) Deleted() bool {
 	return s.StartsAt.Equal(s.EndsAt)
-}
-
-// NotifcationInfo holds information about the last successful notification
-// of an alert to a receiver.
-type NotificationInfo struct {
-	Alert     model.Fingerprint
-	Receiver  string
-	Resolved  bool
-	Timestamp time.Time
-}
-
-func (n *NotificationInfo) String() string {
-	return fmt.Sprintf("<Notify:%q@%s to=%v res=%v>", n.Alert, n.Timestamp, n.Receiver, n.Resolved)
-}
-
-// Fingerprint returns a quasi-unique fingerprint for the NotifyInfo.
-func (n *NotificationInfo) Fingerprint() model.Fingerprint {
-	h := fnv.New64a()
-	h.Write([]byte(n.Receiver))
-
-	fp := model.Fingerprint(h.Sum64())
-
-	return fp ^ n.Alert
 }

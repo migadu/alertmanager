@@ -8,7 +8,6 @@ import (
 
 	"github.com/prometheus/common/log"
 	"github.com/prometheus/common/model"
-	"github.com/satori/go.uuid"
 	"golang.org/x/net/context"
 
 	"github.com/prometheus/alertmanager/notify"
@@ -23,7 +22,8 @@ type Dispatcher struct {
 	alerts provider.Alerts
 	stage  notify.Stage
 
-	marker types.Marker
+	marker  types.Marker
+	timeout func(time.Duration) time.Duration
 
 	aggrGroups map[*Route]map[model.Fingerprint]*aggrGroup
 	mtx        sync.RWMutex
@@ -36,13 +36,20 @@ type Dispatcher struct {
 }
 
 // NewDispatcher returns a new Dispatcher.
-func NewDispatcher(ap provider.Alerts, r *Route, s notify.Stage, mk types.Marker) *Dispatcher {
+func NewDispatcher(
+	ap provider.Alerts,
+	r *Route,
+	s notify.Stage,
+	mk types.Marker,
+	to func(time.Duration) time.Duration,
+) *Dispatcher {
 	disp := &Dispatcher{
-		alerts: ap,
-		stage:  s,
-		route:  r,
-		marker: mk,
-		log:    log.With("component", "dispatcher"),
+		alerts:  ap,
+		stage:   s,
+		route:   r,
+		marker:  mk,
+		timeout: to,
+		log:     log.With("component", "dispatcher"),
 	}
 	return disp
 }
@@ -73,8 +80,8 @@ type AlertBlock struct {
 type APIAlert struct {
 	*model.Alert
 
-	Inhibited bool       `json:"inhibited"`
-	Silenced  *uuid.UUID `json:"silenced,omitempty"`
+	Inhibited bool   `json:"inhibited"`
+	Silenced  string `json:"silenced,omitempty"`
 }
 
 // AlertGroup is a list of alert blocks grouped by the same label set.
@@ -121,7 +128,7 @@ func (d *Dispatcher) Groups() AlertOverview {
 					Inhibited: d.marker.Inhibited(a.Fingerprint()),
 				}
 				if sid, ok := d.marker.Silenced(a.Fingerprint()); ok {
-					aa.Silenced = &sid
+					aa.Silenced = sid
 				}
 				apiAlerts = append(apiAlerts, aa)
 			}
@@ -230,7 +237,7 @@ func (d *Dispatcher) processAlert(alert *types.Alert, route *Route) {
 	// If the group does not exist, create it.
 	ag, ok := groups[fp]
 	if !ok {
-		ag = newAggrGroup(d.ctx, group, &route.RouteOpts)
+		ag = newAggrGroup(d.ctx, group, &route.RouteOpts, d.timeout)
 		groups[fp] = ag
 
 		go ag.run(func(ctx context.Context, alerts ...*types.Alert) bool {
@@ -254,10 +261,11 @@ type aggrGroup struct {
 	routeFP model.Fingerprint
 	log     log.Logger
 
-	ctx    context.Context
-	cancel func()
-	done   chan struct{}
-	next   *time.Timer
+	ctx     context.Context
+	cancel  func()
+	done    chan struct{}
+	next    *time.Timer
+	timeout func(time.Duration) time.Duration
 
 	mtx     sync.RWMutex
 	alerts  map[model.Fingerprint]*types.Alert
@@ -265,11 +273,15 @@ type aggrGroup struct {
 }
 
 // newAggrGroup returns a new aggregation group.
-func newAggrGroup(ctx context.Context, labels model.LabelSet, opts *RouteOpts) *aggrGroup {
+func newAggrGroup(ctx context.Context, labels model.LabelSet, opts *RouteOpts, to func(time.Duration) time.Duration) *aggrGroup {
+	if to == nil {
+		to = func(d time.Duration) time.Duration { return d }
+	}
 	ag := &aggrGroup{
-		labels: labels,
-		opts:   opts,
-		alerts: map[model.Fingerprint]*types.Alert{},
+		labels:  labels,
+		opts:    opts,
+		timeout: to,
+		alerts:  map[model.Fingerprint]*types.Alert{},
 	}
 	ag.ctx, ag.cancel = context.WithCancel(ctx)
 
@@ -303,18 +315,12 @@ func (ag *aggrGroup) run(nf notifyFunc) {
 	defer close(ag.done)
 	defer ag.next.Stop()
 
-	timeout := ag.opts.GroupInterval
-
-	if timeout < notify.MinTimeout {
-		timeout = notify.MinTimeout
-	}
-
 	for {
 		select {
 		case now := <-ag.next.C:
 			// Give the notifcations time until the next flush to
 			// finish before terminating them.
-			ctx, cancel := context.WithTimeout(ag.ctx, timeout)
+			ctx, cancel := context.WithTimeout(ag.ctx, ag.timeout(ag.opts.GroupInterval))
 
 			// The now time we retrieve from the ticker is the only reliable
 			// point of time reference for the subsequent notification pipeline.
