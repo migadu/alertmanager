@@ -1,3 +1,29 @@
+## v0.5.0-alpha.0 / 2016-09-09
+
+This realease requires a storage wipe.
+
+* [FEATURE] High Availability
+* [FEATURE] Garbage collected storage
+* [CHANGE] Different storage format
+
+## v0.4.2 / 2016-09-02
+
+* [BUGFIX] Fix broken regex checkbox in silence form
+* [BUGFIX] Simplify inconsistent silence update behavior
+
+## v0.4.1 / 2016-08-31
+
+* [BUGFIX] Wait for silence query to finish instead of showing error
+* [BUGFIX] Fix sorting of silences
+* [BUGFIX] Provide visual feedback after creating a silence
+* [BUGFIX] Fix styling of silences
+* [ENHANCEMENT] Provide cleaner API silence interface
+
+## v0.4.0 / 2016-08-23
+
+* [FEATURE] Silences are now paginated in the web ui
+* [CHANGE] Failure to start on unparsed flags
+
 ## 0.3.0 / 2016-07-07
 
 * [CHANGE] Alerts are purely in memory and no longer persistent across restarts

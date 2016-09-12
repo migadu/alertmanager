@@ -4,7 +4,7 @@
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/alertmanager/status)][quay]
 [![Docker Pulls](https://img.shields.io/docker/pulls/prom/alertmanager.svg?maxAge=604800)][hub]
 
-The Alertmanager handles alerts sent by client applications such as the Prometheus server. It takes care of deduplicating, grouping, and routing them to the correct receiver integration such as email, PagerDuty, or OpsGenie. It also takes care of silencing and inhibition of alerts.
+The Alertmanager handles alerts sent by client applications such as the Prometheus server. It takes care of deduplicating, grouping, and routing them to the correct receiver integrations such as email, PagerDuty, or OpsGenie. It also takes care of silencing and inhibition of alerts.
 
 * [Documentation](http://prometheus.io/docs/alerting/alertmanager/)
 
@@ -20,23 +20,22 @@ Instructions:
 - Copy the Auth ID and Auth Token into the config
 
 
-## Installation
+## Install
 
-### Build dependencies
+There are various ways of installing Alertmanager.
 
-These dependencies are necessary for building Alertmanager. There are no runtime dependencies, as the resulting binary is statically linked.
+### Precompiled binaries
 
-Debian family:
+Precompiled binaries for released versions are available in the
+[*download* section](https://prometheus.io/download/)
+on [prometheus.io](https://prometheus.io). Using the latest production release binary
+is the recommended way of installing Alertmanager.
 
-    sudo apt-get install build-essential libc6-dev
+### Docker images
 
-Red Hat family:
-
-    sudo yum install glibc-static
+Docker images are available on [Quay.io](https://quay.io/repository/prometheus/alertmanager).
 
 ### Compiling the binary
-
-The current version has to be run from the repository folder as UI assets and notification templates are not yet statically compiled into the binary.
 
 You can either `go get` it:
 
@@ -178,22 +177,37 @@ receivers:
   - service_key: <team-DB-key>
 ```
 
-## Testing
+## High Availability
 
-If you want to test the new Alertmanager while running the current version, you can mirror traffic to the new one with a simple nginx configuration similar to this:
+> Warning: High Availablility is under active development
 
-```
-server {
-  server_name <your_current_alertmanager>;
-  location / {
-    proxy_pass  http://localhost:9093;
-    post_action @forward;
-  }
-  location @forward {
-    proxy_pass http://<your_new_alertmanager>:9093;
-  }
-}
-```
+To create a highly available cluster of the Alertmanager the instances need to
+be configured to communicate with each other. This is configured using the
+`-mesh.*` flags.
+
+- `-mesh.hardware-address` string: MAC address, i.e. mesh peer ID (default "&lt;hardware-mac-address&gt;")
+- `-mesh.listen-address` string: mesh listen address (default "0.0.0.0:6783")
+- `-mesh.nickname` string: peer nickname (default "&lt;machine-hostname&gt;")
+- `-mesh.peer` value: initial peers (may be repeated)
+
+The `mesh.hardware-address` flag is used as a unique ID among the peers. It
+defaults to the MAC address, therefore the default value should typically be a
+good option. The same applies to the default of the `mesh.nickname` flag, as it
+defaults to the hostname. The chosen port in the `mesh.listen-address` flag is
+the port that needs to be specified in the `mesh.peer` flag of the other peers.
+
+To start a cluster of three peers on your local machine use `goreman` and the
+Procfile within this repository.
+
+	goreman start
+
+To point your prometheus instance to multiple Alertmanagers use the
+`-alertmanager.url` parameter. It allows passing in a comma separated list.
+Start your prometheus like this, for example:
+
+	./prometheus -config.file=prometheus.yml -alertmanager.url http://localhost:9095,http://localhost:9094,http://localhost:9093
+
+> Note: make sure to have a valid `prometheus.yml` in your current directory
 
 ## Architecture
 
